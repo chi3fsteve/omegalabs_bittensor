@@ -46,28 +46,25 @@ async def get_relevant_timestamps(query: str, yt: video_utils.YoutubeDL, video_p
     return start_time, end_time
 
 
-async def process_video(query: str, result: video_utils.YoutubeDL, imagebind: ImageBind) -> VideoMetadata:
-    start = time.time()
-    download_path = video_utils.download_video(
-        result.video_id,
-        start=0,
-        end=min(result.length, FIVE_MINUTES)  # download the first 5 minutes at most
-    )
+async def download_and_process_video(query: str, result: video_utils.YoutubeResult, imagebind: ImageBind) -> VideoMetadata:
+    start = time.time()  # Define the start variable here
+    # Download the video
+    download_path = video_utils.download_video(result.video_id, start=0, end=min(result.length, FIVE_MINUTES))
     if download_path:
         clip_path = None
         try:
             result.length = video_utils.get_video_duration(download_path.name)  # correct the length
             bt.logging.info(f"Downloaded video {result.video_id} ({min(result.length, FIVE_MINUTES)}) in {time.time() - start} seconds")
-            start, end = await get_relevant_timestamps(query, result, download_path)
+            start_time, end_time = await get_relevant_timestamps(query, result, download_path)
             description = await get_description(result, download_path)
-            clip_path = video_utils.clip_video(download_path.name, start, end)
+            clip_path = video_utils.clip_video(download_path.name, start_time, end_time)
             embeddings = imagebind.embed([description], [clip_path])
             return VideoMetadata(
                 video_id=result.video_id,
                 description=description,
                 views=result.views,
-                start_time=start,
-                end_time=end,
+                start_time=start_time,
+                end_time=end_time,
                 video_emb=embeddings.video[0].tolist(),
                 audio_emb=embeddings.audio[0].tolist(),
                 description_emb=embeddings.description[0].tolist(),
@@ -95,11 +92,14 @@ async def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageB
     results = video_utils.search_videos(query, max_results=int(num_videos * 1.5))
     video_metas = []
     try:
-        # Process videos concurrently
-        tasks = [process_video(query, result, imagebind) for result in results]
+        # Create a list of tasks to download and process videos concurrently
+        tasks = [download_and_process_video(query, result, imagebind) for result in results]
+        
+        # Use asyncio.gather to run the tasks concurrently
         video_metas = await asyncio.gather(*tasks)
-        video_metas = [meta for meta in video_metas if meta is not None]
-        video_metas = video_metas[:num_videos]  # Take the first N that we need
+        
+        # Filter out None values and take the first N videos
+        video_metas = [meta for meta in video_metas if meta is not None][:num_videos]
     except Exception as e:
         bt.logging.error(f"Error searching for videos: {e}")
         # Log additional information
