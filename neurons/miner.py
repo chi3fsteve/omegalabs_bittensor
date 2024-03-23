@@ -58,7 +58,7 @@ class Miner(BaseMinerNeuron):
     ) -> omega.protocol.Videos:
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         start = time.time()
-        synapse.video_metadata = search_and_embed_videos(
+        synapse.video_metadata = await search_and_embed_videos(
             self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
         time_elapsed = time.time() - start

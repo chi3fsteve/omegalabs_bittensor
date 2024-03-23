@@ -1,14 +1,20 @@
 import os
 import tempfile
 from typing import Optional, BinaryIO
+import time
 
 import bittensor as bt
 import ffmpeg
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
 
+import redis
+from datasets import load_dataset
+
 from omega.constants import FIVE_MINUTES
 
+# Set up Redis connection
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
 def seconds_to_str(seconds):
     hours = seconds // 3600
@@ -46,8 +52,20 @@ class YoutubeResult(BaseModel):
     length: int
     views: int
 
+def load_existing_ids():
+    # Check if the existing video IDs are already in the Redis cache
+    if redis_client.exists("existing_video_ids"):
+        # If the IDs are in the cache, retrieve them
+        existing_ids = redis_client.smembers("existing_video_ids")
+        return set(id.decode('utf-8') for id in existing_ids)
+    else:
+        # If the IDs are not in the cache, load them from the dataset and store them in the cache
+        existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
+        redis_client.sadd("existing_video_ids", *existing_ids)
+        return existing_ids
 
-def search_videos(query, max_results=8):
+def search_videos(query, max_results=8, max_time=60):
+    existing_ids = load_existing_ids()
     videos = []
     ydl_opts = {
         "format": "worst",
@@ -57,24 +75,34 @@ def search_videos(query, max_results=8):
         "simulate": True,
         "match_filter": skip_live,
     }
+    start_time = time.time()
     with YoutubeDL(ydl_opts) as ydl:
         try:
-            search_query = f"ytsearch{max_results}:{query}"
+            search_query = f"ytsearch{max_results * 10}:{query}"  # Search for 10 times the number of desired videos
             result = ydl.extract_info(search_query, download=False)
             if "entries" in result and result["entries"]:
-                videos = [
-                    YoutubeResult(
-                        video_id=entry["id"],
-                        title=entry["title"],
-                        description=entry.get("description"),
-                        length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
-                        views=(entry.get("view_count") if entry.get("view_count") else 0),
-                    ) for entry in result["entries"]
-                ]
+                for entry in result["entries"]:
+                    video_id = entry["id"]
+                    if video_id not in existing_ids:
+                        existing_ids.add(video_id)
+                        redis_client.sadd("existing_video_ids", video_id)
+                        videos.append(YoutubeResult(
+                            video_id=video_id,
+                            title=entry["title"],
+                            description=entry.get("description"),
+                            length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
+                            views=(entry.get("view_count") if entry.get("view_count") else 0),
+                        ))
+                    if len(videos) == max_results:
+                        break
+                    if time.time() - start_time > max_time:
+                        bt.logging.warning(f"Search time limit of {max_time} seconds exceeded. Returning {len(videos)} videos.")
+                        break
         except Exception as e:
             bt.logging.warning(f"Error searching for videos: {e}")
             return []
     return videos
+
 
 
 def get_video_duration(filename: str) -> int:
