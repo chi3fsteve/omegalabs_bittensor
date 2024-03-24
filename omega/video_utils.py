@@ -78,8 +78,10 @@ def search_videos(query, max_results=8, max_time=60):
     start_time = time.time()
     with YoutubeDL(ydl_opts) as ydl:
         try:
-            search_query = f"ytsearch{max_results * 10}:{query}"  # Search for 10 times the number of desired videos
+            search_query = f"ytsearch{max_results * 10}:{query}"
+            bt.logging.info(f"Searching for videos with query: {search_query}")
             result = ydl.extract_info(search_query, download=False)
+            bt.logging.info(f"Search result: {result}")
             if "entries" in result and result["entries"]:
                 for entry in result["entries"]:
                     video_id = entry["id"]
@@ -93,16 +95,20 @@ def search_videos(query, max_results=8, max_time=60):
                             length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
                             views=(entry.get("view_count") if entry.get("view_count") else 0),
                         ))
+                    else:
+                        bt.logging.info(f"Skipping video {video_id} as it already exists in the database.")
                     if len(videos) == max_results:
                         break
                     if time.time() - start_time > max_time:
                         bt.logging.warning(f"Search time limit of {max_time} seconds exceeded. Returning {len(videos)} videos.")
                         break
+            else:
+                bt.logging.warning("No video entries found in the search result.")
         except Exception as e:
             bt.logging.warning(f"Error searching for videos: {e}")
             return []
+    bt.logging.info(f"Search returned {len(videos)} videos.")
     return videos
-
 
 
 def get_video_duration(filename: str) -> int:
@@ -119,13 +125,13 @@ class IPBlockedException(Exception):
 
 def download_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None, proxy: Optional[str]=None
-) -> Optional[BinaryIO]:
+) -> Optional[str]:
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
-    temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
+    temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
     ydl_opts = {
         "format": "worst",  # Download the worst quality
-        "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
+        "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file's name
         "overwrites": True,
         "quiet": True,
         "noprogress": True,
@@ -146,11 +152,13 @@ def download_video(
         if os.stat(temp_fileobj.name).st_size == 0:
             print(f"Error downloading video: {temp_fileobj.name} is empty")
             temp_fileobj.close()
+            os.unlink(temp_fileobj.name)
             return None
 
-        return temp_fileobj
+        return temp_fileobj.name
     except Exception as e:
         temp_fileobj.close()
+        os.unlink(temp_fileobj.name)
         if (
             "Your IP is likely being blocked by Youtube" in str(e) or
             "Requested format is not available" in str(e)
