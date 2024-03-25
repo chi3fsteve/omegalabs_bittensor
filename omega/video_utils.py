@@ -64,8 +64,6 @@ def load_existing_ids():
         redis_client.sadd("existing_video_ids", *existing_ids)
         return existing_ids
 
-search_count = 0
-
 def search_videos(query, max_results=8, max_time=60):
     existing_ids = load_existing_ids()
     videos = []
