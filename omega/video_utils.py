@@ -15,6 +15,14 @@ from omega.constants import FIVE_MINUTES
 
 # Set up Redis connection
 redis_client = redis.Redis(host='localhost', port=6379, db=0)
+try:
+    response = redis_client.ping()
+    if response:
+        print("Redis connection successful.")
+    else:
+        print("Redis server is not responding.")
+except redis.ConnectionError as e:
+    print(f"Failed to connect to Redis server: {e}")
 
 def seconds_to_str(seconds):
     hours = seconds // 3600
@@ -64,8 +72,16 @@ def load_existing_ids():
         redis_client.sadd("existing_video_ids", *existing_ids)
         return existing_ids
 
+search_count = 0
+
 def search_videos(query, max_results=8, max_time=60):
-    existing_ids = load_existing_ids()
+    global search_count
+    if search_count % 5 == 0:
+        existing_ids = load_existing_ids()
+    else:
+        existing_ids = redis_client.smembers("existing_video_ids")
+        existing_ids = set(id.decode('utf-8') for id in existing_ids)
+
     videos = []
     ydl_opts = {
         "format": "worst",
@@ -103,7 +119,7 @@ def search_videos(query, max_results=8, max_time=60):
                 if len(videos) < max_results:
                     for entry in result["entries"]:
                         video_id = entry["id"]
-                        if video_id not in videos:
+                        if video_id not in [video.video_id for video in videos]:
                             videos.append(YoutubeResult(
                                 video_id=video_id,
                                 title=entry["title"],
@@ -117,8 +133,9 @@ def search_videos(query, max_results=8, max_time=60):
         except Exception as e:
             bt.logging.warning(f"Error searching for videos: {e}")
             return []
-    return videos
 
+    search_count += 1
+    return videos
 
 def get_video_duration(filename: str) -> int:
     metadata = ffmpeg.probe(filename)

@@ -9,7 +9,7 @@ from omega.protocol import Videos
 async def main():
     imagebind = ImageBind()
     start = time.time()
-    query = "wine and winemaking random"
+    query = "wine and winemaking"
     num_videos = 8
     video_metadata_list = await search_and_embed_videos(query, num_videos, imagebind)
     time_elapsed = time.time() - start
