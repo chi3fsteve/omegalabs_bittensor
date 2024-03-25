@@ -77,7 +77,12 @@ search_count = 0
 def search_videos(query, max_results=8, max_time=60):
     global search_count
     if search_count % 5 == 0:
-        existing_ids = load_existing_ids()
+        # Clear the existing cache
+        redis_client.delete("existing_video_ids")
+        
+        # Load the new set of existing IDs from the dataset
+        existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
+        redis_client.sadd("existing_video_ids", *existing_ids)
     else:
         existing_ids = redis_client.smembers("existing_video_ids")
         existing_ids = set(id.decode('utf-8') for id in existing_ids)
