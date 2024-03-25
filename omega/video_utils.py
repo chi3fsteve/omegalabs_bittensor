@@ -8,21 +8,21 @@ import ffmpeg
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
 
-import redis
+# import redis
 from datasets import load_dataset
 
 from omega.constants import FIVE_MINUTES
 
 # Set up Redis connection
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
-try:
-    response = redis_client.ping()
-    if response:
-        print("Redis connection successful.")
-    else:
-        print("Redis server is not responding.")
-except redis.ConnectionError as e:
-    print(f"Failed to connect to Redis server: {e}")
+# redis_client = redis.Redis(host='localhost', port=6379, db=0)
+# try:
+#     response = redis_client.ping()
+#     if response:
+#         print("Redis connection successful.")
+#     else:
+#         print("Redis server is not responding.")
+# except redis.ConnectionError as e:
+#     print(f"Failed to connect to Redis server: {e}")
 
 def seconds_to_str(seconds):
     hours = seconds // 3600
@@ -61,31 +61,19 @@ class YoutubeResult(BaseModel):
     views: int
 
 def load_existing_ids():
-    # Check if the existing video IDs are already in the Redis cache
-    if redis_client.exists("existing_video_ids"):
-        # If the IDs are in the cache, retrieve them
-        existing_ids = redis_client.smembers("existing_video_ids")
-        return set(id.decode('utf-8') for id in existing_ids)
-    else:
-        # If the IDs are not in the cache, load them from the dataset and store them in the cache
-        existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
-        redis_client.sadd("existing_video_ids", *existing_ids)
-        return existing_ids
+    # If the IDs are not in the cache, load them from the dataset
+    existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
+    return existing_ids
 
 search_count = 0
 
 def search_videos(query, max_results=8, max_time=60):
     global search_count
     if search_count % 5 == 0:
-        # Clear the existing cache
-        redis_client.delete("existing_video_ids")
-        
         # Load the new set of existing IDs from the dataset
         existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
-        redis_client.sadd("existing_video_ids", *existing_ids)
     else:
-        existing_ids = redis_client.smembers("existing_video_ids")
-        existing_ids = set(id.decode('utf-8') for id in existing_ids)
+        existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
 
     videos = []
     ydl_opts = {
@@ -106,7 +94,6 @@ def search_videos(query, max_results=8, max_time=60):
                     video_id = entry["id"]
                     if video_id not in existing_ids:
                         existing_ids.add(video_id)
-                        redis_client.sadd("existing_video_ids", video_id)
                         videos.append(YoutubeResult(
                             video_id=video_id,
                             title=entry["title"],
@@ -207,4 +194,3 @@ def copy_audio(video_path: str) -> BinaryIO:
         .run(quiet=True)
     )
     return temp_audiofile
- 
