@@ -77,7 +77,7 @@ async def process_video(query: str, result: video_utils.YoutubeDL, imagebind: Im
             if clip_path:
                 clip_path.close()
     return None
-#comment
+
 
 async def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -> List[VideoMetadata]:
     """
