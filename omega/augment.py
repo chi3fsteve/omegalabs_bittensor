@@ -6,7 +6,7 @@ from transformers import pipeline
 
 
 def get_llm_prompt(query: str) -> str:
-    return f"Take the given query `{query}` and augment it to be more detailed and unique. For example, add specific names, types, embellishments, richness. The goal is to search for the most obscure videos using this prompt so realy try combining the topic with some other thing that is related but not necessarily obvious. Do not make it longer than 12 words."
+    return f"Take the given query `{query}` and augment it to be more detailed and unique. For example, add specific names, types, embellishments, richness. The goal is to search for the most obscure videos using this prompt, so really try combining the topic with some other thing that is related but not necessarily obvious. Do not make it longer than 12 words."
 
 class AbstractAugment:
     def __init__(self, **kwargs):
