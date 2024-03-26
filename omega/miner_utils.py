@@ -48,7 +48,7 @@ async def get_relevant_timestamps(query: str, yt: video_utils.YoutubeDL, video_p
 
 async def process_video(query: str, result: video_utils.YoutubeDL, imagebind: ImageBind) -> VideoMetadata:
     start = time.time()
-    download_path = video_utils.download_video(
+    download_path = await video_utils.download_video(
         result.video_id,
         start=0,
         end=min(result.length, FIVE_MINUTES)  # download the first 5 minutes at most

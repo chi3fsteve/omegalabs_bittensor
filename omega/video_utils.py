@@ -9,6 +9,8 @@ from yt_dlp import YoutubeDL
 
 from omega.constants import FIVE_MINUTES
 
+import asyncio
+
 
 def seconds_to_str(seconds):
     hours = seconds // 3600
@@ -89,7 +91,7 @@ class IPBlockedException(Exception):
         super().__init__(message)
 
 
-def download_video(
+async def download_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None, proxy: Optional[str]=None
 ) -> Optional[BinaryIO]:
     video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -97,7 +99,7 @@ def download_video(
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
     ydl_opts = {
         "format": "worst",  # Download the worst quality
-        "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
+        "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file's name
         "overwrites": True,
         "quiet": True,
         "noprogress": True,
@@ -112,7 +114,8 @@ def download_video(
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, ydl.download, [video_url])
 
         # Check if the file is empty (download failed)
         if os.stat(temp_fileobj.name).st_size == 0:
