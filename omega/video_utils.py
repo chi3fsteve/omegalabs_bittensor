@@ -18,6 +18,7 @@ def load_existing_ids():
         with open(EXISTING_IDS_FILE, "r") as f:
             return set(line.strip() for line in f)
     except FileNotFoundError:
+        print("Datasets file not found")
         return set()
 
 existing_ids = load_existing_ids()
@@ -71,7 +72,7 @@ def search_videos(query, max_results=8):
     }
     with YoutubeDL(ydl_opts) as ydl:
         try:
-            search_query = f"ytsearch{max_results * 10}:{query}"  # Search for 5 times the desired number of videos
+            search_query = f"ytsearch{max_results * 5}:{query}"  # Search for 5 times the desired number of videos
             result = ydl.extract_info(search_query, download=False)
             if "entries" in result and result["entries"]:
                 unique_videos = []
@@ -87,7 +88,25 @@ def search_videos(query, max_results=8):
                         unique_videos.append(video)
                         if len(unique_videos) == max_results:
                             break
+                
+                # Fill remaining slots with videos from the search query results
+                if len(unique_videos) < max_results:
+                    remaining_slots = max_results - len(unique_videos)
+                    for entry in result["entries"]:
+                        if entry["id"] not in existing_ids and entry["id"] not in [video.video_id for video in unique_videos]:
+                            video = YoutubeResult(
+                                video_id=entry["id"],
+                                title=entry["title"],
+                                description=entry.get("description"),
+                                length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
+                                views=(entry.get("view_count") if entry.get("view_count") else 0),
+                            )
+                            unique_videos.append(video)
+                            if len(unique_videos) == max_results:
+                                break
+                
                 videos = unique_videos
+
         except Exception as e:
             bt.logging.warning(f"Error searching for videos: {e}")
             return []
