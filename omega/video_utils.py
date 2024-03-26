@@ -53,16 +53,26 @@ class YoutubeResult(BaseModel):
     views: int
 
 def load_existing_ids():
-    # Check if the existing video IDs are already in the Redis cache
-    if redis_client.exists("existing_video_ids"):
-        # If the IDs are in the cache, retrieve them
-        existing_ids = redis_client.smembers("existing_video_ids")
-        return set(id.decode('utf-8') for id in existing_ids)
-    else:
-        # If the IDs are not in the cache, load them from the dataset and store them in the cache
-        existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
-        redis_client.sadd("existing_video_ids", *existing_ids)
-        return existing_ids
+    max_retries = 3
+    retry_delay = 1  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            if redis_client.exists("existing_video_ids"):
+                existing_ids = redis_client.smembers("existing_video_ids")
+                return set(id.decode('utf-8') for id in existing_ids)
+            else:
+                existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
+                redis_client.sadd("existing_video_ids", *existing_ids)
+                return existing_ids
+        except redis.ConnectionError as e:
+            if attempt < max_retries - 1:
+                print(f"Redis connection error: {e}. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                raise
+
+    raise redis.ConnectionError("Failed to connect to Redis after multiple retries.")
 
 def search_videos(query, max_results=8, max_time=60):
     existing_ids = load_existing_ids()
