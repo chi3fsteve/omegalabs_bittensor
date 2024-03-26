@@ -11,6 +11,16 @@ from omega.constants import FIVE_MINUTES
 
 import asyncio
 
+EXISTING_IDS_FILE = "existing_ids.txt"
+
+def load_existing_ids():
+    try:
+        with open(EXISTING_IDS_FILE, "r") as f:
+            return set(line.strip() for line in f)
+    except FileNotFoundError:
+        return set()
+
+existing_ids = load_existing_ids()
 
 def seconds_to_str(seconds):
     hours = seconds // 3600
@@ -61,18 +71,23 @@ def search_videos(query, max_results=8):
     }
     with YoutubeDL(ydl_opts) as ydl:
         try:
-            search_query = f"ytsearch{max_results}:{query}"
+            search_query = f"ytsearch{max_results * 10}:{query}"  # Search for 5 times the desired number of videos
             result = ydl.extract_info(search_query, download=False)
             if "entries" in result and result["entries"]:
-                videos = [
-                    YoutubeResult(
-                        video_id=entry["id"],
-                        title=entry["title"],
-                        description=entry.get("description"),
-                        length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
-                        views=(entry.get("view_count") if entry.get("view_count") else 0),
-                    ) for entry in result["entries"]
-                ]
+                unique_videos = []
+                for entry in result["entries"]:
+                    if entry["id"] not in existing_ids:
+                        video = YoutubeResult(
+                            video_id=entry["id"],
+                            title=entry["title"],
+                            description=entry.get("description"),
+                            length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
+                            views=(entry.get("view_count") if entry.get("view_count") else 0),
+                        )
+                        unique_videos.append(video)
+                        if len(unique_videos) == max_results:
+                            break
+                videos = unique_videos
         except Exception as e:
             bt.logging.warning(f"Error searching for videos: {e}")
             return []
