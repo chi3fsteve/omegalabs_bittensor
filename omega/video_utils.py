@@ -1,22 +1,14 @@
 import os
 import tempfile
 from typing import Optional, BinaryIO
-import time
 
 import bittensor as bt
 import ffmpeg
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
 
-import redis
-from datasets import load_dataset
-
-import logging
-
 from omega.constants import FIVE_MINUTES
 
-# Set up Redis connection
-redis_client = redis.Redis(host='localhost', port=6379, db=0, ssl=True)
 
 def seconds_to_str(seconds):
     hours = seconds // 3600
@@ -54,114 +46,35 @@ class YoutubeResult(BaseModel):
     length: int
     views: int
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_existing_ids():
-    max_retries = 3
-    retry_delay = 1  # seconds
-
-    for attempt in range(max_retries):
+def search_videos(query, max_results=8):
+    videos = []
+    ydl_opts = {
+        "format": "worst",
+        "dumpjson": True,
+        "extract_flat": True,
+        "quiet": True,
+        "simulate": True,
+        "match_filter": skip_live,
+    }
+    with YoutubeDL(ydl_opts) as ydl:
         try:
-            if redis_client.exists("existing_video_ids"):
-                logging.info("Fetching existing video IDs from Redis...")
-                existing_ids = redis_client.smembers("existing_video_ids")
-                logging.info(f"Fetched {len(existing_ids)} existing video IDs from Redis.")
-                return set(id.decode('utf-8') for id in existing_ids)
-            else:
-                logging.info("Loading existing video IDs from the dataset...")
-                existing_ids = set(load_dataset('omegalabsinc/omega-multimodal')['train']['youtube_id'])
-                logging.info(f"Loaded {len(existing_ids)} existing video IDs from the dataset.")
-                
-                logging.info("Storing existing video IDs in Redis...")
-                redis_client.sadd("existing_video_ids", *existing_ids)
-                logging.info("Stored existing video IDs in Redis.")
-                return existing_ids
-        except redis.ConnectionError as e:
-            logging.error(f"Redis connection error: {e}")
-            if attempt < max_retries - 1:
-                logging.info(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-            else:
-                logging.error("Failed to connect to Redis after multiple retries.")
-                raise
+            search_query = f"ytsearch{max_results}:{query}"
+            result = ydl.extract_info(search_query, download=False)
+            if "entries" in result and result["entries"]:
+                videos = [
+                    YoutubeResult(
+                        video_id=entry["id"],
+                        title=entry["title"],
+                        description=entry.get("description"),
+                        length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
+                        views=(entry.get("view_count") if entry.get("view_count") else 0),
+                    ) for entry in result["entries"]
+                ]
         except Exception as e:
-            logging.error(f"An unexpected error occurred: {e}")
-            raise
-
-    raise redis.ConnectionError("Failed to connect to Redis after multiple retries.")
-
-
-def search_videos(query, max_results=8, max_time=60):
-    try:
-        existing_ids = load_existing_ids()
-        logging.info(f"Loaded {len(existing_ids)} existing video IDs.")
-
-        videos = []
-        ydl_opts = {
-            "format": "worst",
-            "dumpjson": True,
-            "extract_flat": True,
-            "quiet": True,
-            "simulate": True,
-            "match_filter": skip_live,
-        }
-        start_time = time.time()
-        with YoutubeDL(ydl_opts) as ydl:
-            try:
-                search_query = f"ytsearch{max_results * 10}:{query}"
-                logging.info(f"Searching for videos with query: {search_query}")
-
-                result = ydl.extract_info(search_query, download=False)
-                if "entries" in result and result["entries"]:
-                    for entry in result["entries"]:
-                        video_id = entry["id"]
-                        if video_id not in existing_ids:
-                            existing_ids.add(video_id)
-                            redis_client.sadd("existing_video_ids", video_id)
-                            videos.append(YoutubeResult(
-                                video_id=video_id,
-                                title=entry["title"],
-                                description=entry.get("description"),
-                                length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
-                                views=(entry.get("view_count") if entry.get("view_count") else 0),
-                            ))
-                        if len(videos) == max_results:
-                            logging.info(f"Found {len(videos)} unique videos.")
-                            break
-                        if time.time() - start_time > max_time:
-                            logging.warning(f"Search time limit of {max_time} seconds exceeded. Returning {len(videos)} videos.")
-                            break
-                else:
-                    logging.warning("No video entries found in the search result.")
-
-                # If there are less than 8 unique videos, fill the remaining slots with non-unique videos
-                if len(videos) < max_results:
-                    logging.info(f"Filling remaining slots with non-unique videos.")
-                    for entry in result["entries"]:
-                        video_id = entry["id"]
-                        if video_id not in [video.video_id for video in videos]:
-                            videos.append(YoutubeResult(
-                                video_id=video_id,
-                                title=entry["title"],
-                                description=entry.get("description"),
-                                length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
-                                views=(entry.get("view_count") if entry.get("view_count") else 0),
-                            ))
-                        if len(videos) == max_results:
-                            logging.info(f"Found a total of {len(videos)} videos.")
-                            break
-            except Exception as e:
-                logging.error(f"Error searching for videos: {e}")
-                return []
-
-        logging.info(f"Returning {len(videos)} videos.")
-        return videos
-    except redis.ConnectionError as e:
-        logging.error(f"Redis connection error: {e}")
-        return []
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during video search: {e}")
-        return []
+            bt.logging.warning(f"Error searching for videos: {e}")
+            return []
+    return videos
 
 
 def get_video_duration(filename: str) -> int:
@@ -229,4 +142,3 @@ def copy_audio(video_path: str) -> BinaryIO:
         .run(quiet=True)
     )
     return temp_audiofile
- 
