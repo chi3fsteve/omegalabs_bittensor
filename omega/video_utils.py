@@ -72,7 +72,7 @@ def search_videos(query, max_results=8):
     }
     with YoutubeDL(ydl_opts) as ydl:
         try:
-            search_query = f"ytsearch{max_results * 5}:{query}"  # Search for 5 times the desired number of videos
+            search_query = f"ytsearch{max_results * 20}:{query}"  # Search for 5 times the desired number of videos
             result = ydl.extract_info(search_query, download=False)
             if "entries" in result and result["entries"]:
                 unique_videos = []
