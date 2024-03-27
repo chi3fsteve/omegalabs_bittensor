@@ -86,6 +86,7 @@ def search_videos(query, max_results=8):
                             views=(entry.get("view_count") if entry.get("view_count") else 0),
                         )
                         unique_videos.append(video)
+                        existing_ids.add(entry["id"])
                         if len(unique_videos) == max_results:
                             break
                 
