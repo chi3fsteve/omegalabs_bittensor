@@ -6,6 +6,7 @@ from omega.miner_utils import search_and_embed_videos, ImageBind
 from omega.constants import VALIDATOR_TIMEOUT
 from omega.protocol import Videos
 
+
 async def main():
     imagebind = ImageBind()
     start = time.time()
